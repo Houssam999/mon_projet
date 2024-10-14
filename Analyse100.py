@@ -203,7 +203,7 @@ def main():
     # Calculer les degrés des nœuds
     node_degrees = extract_node_degrees(segments)
 
-    # Définir les combinaisons intéressantes
+    # Définir les combinaisons intéressantes. C'est juste un exemple. En vrai, je peux me passer de ce filtre. Pas de souci
     combinaisons_interessees = [(1, 2), (1, 3), (2, 2), (2, 3), (3, 3)]
 
     # Regrouper les segments par combinaison de degrés
@@ -220,8 +220,7 @@ def main():
         if combination in combinaisons_interessees:
             segments_by_combination[combination].append(segment)
 
-    # Afficher les combinaisons trouvées
-    print(f"Combinaisons de degrés présentes dans le réseau : {sorted(segments_by_combination.keys())}")
+    
 
     if not segments_by_combination:
         print("Aucun segment trouvé correspondant aux combinaisons spécifiées.")
