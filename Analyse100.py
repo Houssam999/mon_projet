@@ -203,9 +203,6 @@ def main():
     # Calculer les degrés des nœuds
     node_degrees = extract_node_degrees(segments)
 
-    # Définir les combinaisons intéressantes. C'est juste un exemple. En vrai, je peux me passer de ce filtre. Pas de souci
-    combinaisons_interessees = [(1, 2), (1, 3), (2, 2), (2, 3), (3, 3)]
-
     # Regrouper les segments par combinaison de degrés
     segments_by_combination = defaultdict(list)
     for segment in segments:
@@ -217,96 +214,105 @@ def main():
         else:
             degree2 = 0
         combination = tuple(sorted((degree1, degree2)))
-        if combination in combinaisons_interessees:
-            segments_by_combination[combination].append(segment)
+        segments_by_combination[combination].append(segment)
 
-    
+   
 
     if not segments_by_combination:
-        print("Aucun segment trouvé correspondant aux combinaisons spécifiées.")
+        print("Aucun segment trouvé.")
         return
 
-    idx = 1
+    # Liste des combinaisons à exclure : comme indiqué dans mon mail, ceci n'est qu'un exemple. Là, j'exclus des combinaisons pour me focaliser sur d'autres. Mais on peut tout à fait s'en passer
+    unwanted_combinations = {(1, 3), (1, 4), (1, 5)}
+
+    idx_segment = 1
+    segments_processed = 0
+    # Parcourir les segments et traiter jusqu'à 50 segments (évidemment, j'en mets 50 ici mais on peut en mettre 1000 ou plus si on le souhaite. Pour un test efficace qui parcourt plusieurs combinaisons, mieux vaut augmenter le nombre : j'ai choisis d'afficher les combinaisons par paquet :quand on met 50 comme ici, généralement on tombe sur la même comibinaison (3,4) par exemple)
     for combination, segment_list in segments_by_combination.items():
-        # Sélectionner un seul segment par combinaison
-        segment = next(iter(segment_list))
-        start_label = segment['start_label']
-        end_label = segment['end_label']
-        start_pos = label_to_position[start_label]
-        degree1 = node_degrees.get(start_label, 0)
-        if end_label is not None:
-            end_pos = label_to_position[end_label]
-            degree2 = node_degrees.get(end_label, 0)
-        else:
-            end_pos = segment['end_pos']
-            degree2 = 0
-        coords = segment['coords']
+        if combination in unwanted_combinations:
+            continue  # On saute les combinaisons indésirables
+        for segment in segment_list:
+            if segments_processed >= 50:
+                break  # On a déjà traité 50 segments
+            start_label = segment['start_label']
+            end_label = segment['end_label']
+            start_pos = label_to_position[start_label]
+            degree1 = node_degrees.get(start_label, 0)
+            if end_label is not None:
+                end_pos = label_to_position[end_label]
+                degree2 = node_degrees.get(end_label, 0)
+            else:
+                end_pos = segment['end_pos']
+                degree2 = 0
+            coords = segment['coords']
 
-        # Créer un masque du segment
-        segment_mask = np.zeros_like(binary_image, dtype=bool)
-        segment_mask[coords[:, 0], coords[:, 1]] = True
-        vein_mask = morphology.binary_dilation(segment_mask, morphology.disk(3)) & binary_image
-        distance_map = ndimage.distance_transform_edt(vein_mask)
+            # Créer un masque du segment
+            segment_mask = np.zeros_like(binary_image, dtype=bool)
+            segment_mask[coords[:, 0], coords[:, 1]] = True
+            vein_mask = morphology.binary_dilation(segment_mask, morphology.disk(3)) & binary_image
+            distance_map = ndimage.distance_transform_edt(vein_mask)
 
-        # Mesurer la largeur du segment
-        largeur_mesure = mesurer_largeur_segment(binary_image, segment, distance_map)
+            # Mesurer la largeur du segment
+            largeur_mesure = mesurer_largeur_segment(binary_image, segment, distance_map)
 
-        if largeur_mesure:
-            # Afficher les mesures
-            print(f"\nSegment {idx}: Nœud A {start_pos} (degré {degree1}), Nœud B {end_pos} (degré {degree2})")
-            print(f"Combinaison de degrés : {combination}")
-            print(f"Largeur moyenne = {largeur_mesure['largeur_moyenne']:.2f} pixels")
-            print(f"Largeur au nœud A = {largeur_mesure['largeur_noeud_A']} pixels")
-            print(f"Largeur au nœud B = {largeur_mesure['largeur_noeud_B']} pixels")
-            print(f"Largeur au milieu = {largeur_mesure['largeur_milieu']} pixels")
-            print(f"Largeur minimale = {largeur_mesure['largeur_minimale']} pixels")
-            print(f"Largeur maximale = {largeur_mesure['largeur_maximale']} pixels")
+            if largeur_mesure:
+                # Afficher les mesures
+                print(f"\nSegment {idx_segment}: Nœud A {start_pos} (degré {degree1}), Nœud B {end_pos} (degré {degree2})")
+                print(f"Combinaison de degrés : {combination}")
+                print(f"Largeur moyenne = {largeur_mesure['largeur_moyenne']:.2f} pixels")
+                print(f"Largeur au nœud A = {largeur_mesure['largeur_noeud_A']} pixels")
+                print(f"Largeur au nœud B = {largeur_mesure['largeur_noeud_B']} pixels")
+                print(f"Largeur au milieu = {largeur_mesure['largeur_milieu']} pixels")
+                print(f"Largeur minimale = {largeur_mesure['largeur_minimale']} pixels")
+                print(f"Largeur maximale = {largeur_mesure['largeur_maximale']} pixels")
 
-            # Image 1 : Squelette et réseau réel avec les nœuds
-            plt.figure(figsize=(8, 8))
-            plt.imshow(binary_image, cmap='gray')
-            plt.imshow(skeleton, cmap='hot', alpha=0.5)
-            plt.scatter([start_pos[1]], [start_pos[0]], c='green', s=50, label=f'Nœud A (degré {degree1})')
-            plt.scatter([end_pos[1]], [end_pos[0]], c='yellow', s=50, label=f'Nœud B (degré {degree2})')
-            plt.legend()
-            plt.title(f'Segment {idx}: Squelette et réseau réel')
-            plt.axis('off')
-            plt.savefig(f'segment_{idx}_image1.png', bbox_inches='tight')
-            plt.show()
+                # Image 1 : Squelette et réseau réel avec les nœuds
+                plt.figure(figsize=(8, 8))
+                plt.imshow(binary_image, cmap='gray')
+                plt.imshow(skeleton, cmap='hot', alpha=0.5)
+                plt.scatter([start_pos[1]], [start_pos[0]], c='green', s=50, label=f'Nœud A (degré {degree1})')
+                plt.scatter([end_pos[1]], [end_pos[0]], c='yellow', s=50, label=f'Nœud B (degré {degree2})')
+                plt.legend()
+                plt.title(f'Segment {idx_segment}: Squelette et réseau réel')
+                plt.axis('off')
+                plt.show()
 
-            # Image 2 : Squelette et lignes perpendiculaires
-            plt.figure(figsize=(8, 8))
-            plt.imshow(skeleton, cmap='gray')
-            plt.scatter([start_pos[1]], [start_pos[0]], c='green', s=50, label=f'Nœud A (degré {degree1})')
-            plt.scatter([end_pos[1]], [end_pos[0]], c='yellow', s=50, label=f'Nœud B (degré {degree2})')
-            # Tracer les lignes perpendiculaires
-            for i in range(1, len(coords) - 1, max(1, len(coords) // 20)):
-                y, x = coords[i]
-                dy = coords[i+1][0] - coords[i-1][0]
-                dx = coords[i+1][1] - coords[i-1][1]
-                norm = np.hypot(dx, dy)
-                if norm == 0:
-                    continue
-                perp_dx = -dy / norm
-                perp_dy = dx / norm
-                if distance_map[y, x] == 0:
-                    continue
-                length = distance_map[y, x] * 2
-                if length < 1:
-                    continue
-                r0 = y - perp_dy * length / 2
-                c0 = x - perp_dx * length / 2
-                r1 = y + perp_dy * length / 2
-                c1 = x + perp_dx * length / 2
-                plt.plot([c0, c1], [r0, r1], 'blue', linewidth=0.5)
-            plt.legend()
-            plt.title(f'Segment {idx}: Squelette et lignes perpendiculaires')
-            plt.axis('off')
-            plt.savefig(f'segment_{idx}_image2.png', bbox_inches='tight')
-            plt.show()
-        else:
-            print(f"Segment {idx}: Impossible de mesurer la largeur")
-        idx +=1
+                # Image 2 : Squelette et lignes perpendiculaires
+                plt.figure(figsize=(8, 8))
+                plt.imshow(skeleton, cmap='gray')
+                plt.scatter([start_pos[1]], [start_pos[0]], c='green', s=50, label=f'Nœud A (degré {degree1})')
+                plt.scatter([end_pos[1]], [end_pos[0]], c='yellow', s=50, label=f'Nœud B (degré {degree2})')
+                # Tracer les lignes perpendiculaires
+                for i in range(1, len(coords) - 1, max(1, len(coords) // 20)):
+                    y, x = coords[i]
+                    dy = coords[i+1][0] - coords[i-1][0]
+                    dx = coords[i+1][1] - coords[i-1][1]
+                    norm = np.hypot(dx, dy)
+                    if norm == 0:
+                        continue
+                    perp_dx = -dy / norm
+                    perp_dy = dx / norm
+                    if distance_map[y, x] == 0:
+                        continue
+                    length = distance_map[y, x] * 2
+                    if length < 1:
+                        continue
+                    r0 = y - perp_dy * length / 2
+                    c0 = x - perp_dx * length / 2
+                    r1 = y + perp_dy * length / 2
+                    c1 = x + perp_dx * length / 2
+                    plt.plot([c0, c1], [r0, r1], 'blue', linewidth=0.5)
+                plt.legend()
+                plt.title(f'Segment {idx_segment}: Squelette et lignes perpendiculaires')
+                plt.axis('off')
+                plt.show()
+            else:
+                print(f"Segment {idx_segment}: Impossible de mesurer la largeur")
+            idx_segment += 1
+            segments_processed += 1
+            if segments_processed >= 50:
+                print("Nombre total de segments traités atteint.")
+                break  # On a atteint le nombre de segments souhaité
 
 if __name__ == "__main__":
     main()
