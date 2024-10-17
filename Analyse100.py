@@ -187,7 +187,7 @@ def mesurer_largeur_segment(binary_image, segment, distance_map):
         return None
 
 def main():
-    # Charger l'image et binariser
+    # Charger l'image et binariser. Pour l'exemple, j'ai mis la dernière image. Mais vous pouvez Mesdames changer la valeur pour tester n'importe quelle image du fichier. Personnellement, j'ai agi sur les 10 dernières au cours de mon travail
     data = np.load('network2.npy')
     binary_image = (data[-1] == 2).astype(bool)
 
@@ -230,7 +230,7 @@ def main():
     # Parcourir les segments et traiter jusqu'à 50 segments (évidemment, j'en mets 50 ici mais on peut en mettre 1000 ou plus si on le souhaite. Pour un test efficace qui parcourt plusieurs combinaisons, mieux vaut augmenter le nombre : j'ai choisis d'afficher les combinaisons par paquet :quand on met 50 comme ici, généralement on tombe sur la même comibinaison (3,4) par exemple)
     for combination, segment_list in segments_by_combination.items():
         if combination in unwanted_combinations:
-            continue  # On saute les combinaisons indésirables
+            continue  # On saute les combinaisons indésirables. Ps : On peut vider la liste que j'ai mis ci-dessus pour ne pas se restreindre. Ceci n'est qu'un exemple comme indiqué dans le mail.
         for segment in segment_list:
             if segments_processed >= 50:
                 break  # On a déjà traité 50 segments
