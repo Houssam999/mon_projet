@@ -197,6 +197,17 @@ def main():
     # Détection des nœuds
     labeled_nodes, label_to_position = detect_nodes(skeleton)
 
+    # **Modification pour vous Madame ** : Afficher le squelette avec les nœuds détectés (je n'avais pas inclu cet affichage pour le dernier envoi)
+    plt.figure(figsize=(8, 8))
+    plt.imshow(skeleton, cmap='gray')
+    node_positions = np.array(list(label_to_position.values()))
+    if node_positions.size > 0:
+        plt.scatter(node_positions[:, 1], node_positions[:, 0], c='red', s=1, label='Nœuds détectés')
+        plt.legend()
+    plt.title('Squelette avec nœuds détectés')
+    plt.axis('off')
+    plt.show()
+
     # Trouver les segments
     segments = find_segments(skeleton, labeled_nodes, label_to_position)
 
@@ -216,7 +227,7 @@ def main():
         combination = tuple(sorted((degree1, degree2)))
         segments_by_combination[combination].append(segment)
 
-   
+    
 
     if not segments_by_combination:
         print("Aucun segment trouvé.")
@@ -224,13 +235,14 @@ def main():
 
     # Liste des combinaisons à exclure : comme indiqué dans mon mail, ceci n'est qu'un exemple. Là, j'exclus des combinaisons pour me focaliser sur d'autres. Mais on peut tout à fait s'en passer
     unwanted_combinations = {(1, 3), (1, 4), (1, 5)}
+    unwanted_combinations = {(1, 3), (1, 4), (1, 5)}
 
     idx_segment = 1
     segments_processed = 0
-    # Parcourir les segments et traiter jusqu'à 50 segments (évidemment, j'en mets 50 ici mais on peut en mettre 1000 ou plus si on le souhaite. Pour un test efficace qui parcourt plusieurs combinaisons, mieux vaut augmenter le nombre : j'ai choisis d'afficher les combinaisons par paquet :quand on met 50 comme ici, généralement on tombe sur la même comibinaison (3,4) par exemple)
+    # Parcourir les segments et traiter jusqu'à 50 segments (évidemment, j'en mets 50 ici mais on peut en mettre 1000 ou plus si on le souhaite. Pour un test efficace qui parcourt plusieurs combinaisons, mieux vaut augmenter le nombre : j'ai choisis d'afficher les combinaisons par paquet :quand on met 50 comme ici, généralement on tombe sur la même combinaison (3,4) par exemple)
     for combination, segment_list in segments_by_combination.items():
         if combination in unwanted_combinations:
-            continue  # On saute les combinaisons indésirables. Ps : On peut vider la liste que j'ai mis ci-dessus pour ne pas se restreindre. Ceci n'est qu'un exemple comme indiqué dans le mail.
+            continue  # On saute les combinaisons indésirables
         for segment in segment_list:
             if segments_processed >= 50:
                 break  # On a déjà traité 50 segments
