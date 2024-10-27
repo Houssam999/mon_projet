@@ -230,7 +230,7 @@ class NetworkDetection:
             }
             return widths
         else:
-            # I use that as a simple formality precaution (not necessary): if no measurements could be made, estimate width from the distance map
+            # I use that as a formality precaution: if no measurements could be made, estimate width from the distance map
             median_distance = np.median(distance_map[coords[:, 0], coords[:, 1]])
             if median_distance > 0:
                 estimated_width = median_distance * 2
