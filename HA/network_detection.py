@@ -104,7 +104,7 @@ class NetworkDetection:
         """
         Find segments in the skeletonized network.
         """
-        # Remove nodes from the skeleton
+        # Remove nodes from the skeleton to obtain segments without nodes
         skeleton_wo_nodes = self.skeleton.copy()
         skeleton_wo_nodes[self.labeled_nodes > 0] = 0
 
@@ -126,19 +126,15 @@ class NetworkDetection:
             if len(node_labels) >= 2:
                 # If at least two nodes are connected, find the two farthest apart
                 node_positions = [self.label_to_position[n_label] for n_label in node_labels]
-                distances = np.sum((np.array(node_positions)[:, None] - np.array(node_positions)[None, :]) ** 2, axis=2)
+                distances = np.sum(
+                    (np.array(node_positions)[:, None] - np.array(node_positions)[None, :]) ** 2,
+                    axis=2
+                )
                 idx_max = np.unravel_index(np.argmax(distances), distances.shape)
                 start_label = node_labels[idx_max[0]]
                 end_label = node_labels[idx_max[1]]
                 start_pos = self.label_to_position[start_label]
                 end_pos = self.label_to_position[end_label]
-                self.segments.append({
-                    'start_label': start_label,
-                    'end_label': end_label,
-                    'start_pos': start_pos,
-                    'end_pos': end_pos,
-                    'coords': coords
-                })
             elif len(node_labels) == 1:
                 # If only one node is connected, find the farthest extremity
                 start_label = node_labels[0]
@@ -146,51 +142,68 @@ class NetworkDetection:
                 distances = np.sum((coords - np.array(start_pos)) ** 2, axis=1)
                 idx_max = np.argmax(distances)
                 end_pos = tuple(coords[idx_max])
-                self.segments.append({
-                    'start_label': start_label,
-                    'end_label': None,
-                    'start_pos': start_pos,
-                    'end_pos': end_pos,
-                    'coords': coords
-                })
+                end_label = None
+            else:
+                # No connected nodes, isolated segment
+                continue
 
-    def get_segment_width(self, binary_image, segment, distance_map):
+            # Include the positions of the nodes in the segment's coordinates
+            coords = np.vstack([coords, start_pos])
+            if end_label is not None:
+                coords = np.vstack([coords, end_pos])
+            # Remove duplicates
+            coords = np.unique(coords, axis=0)
+
+            self.segments.append({
+                'start_label': start_label,
+                'end_label': end_label,
+                'start_pos': start_pos,
+                'end_pos': end_pos,
+                'coords': coords
+            })
+
+    def get_segment_width(self, binary_image, segment, vein_mask):
         """
-        Measure the width of a segment.
+        Measure the width of a segment using float types for measurements.
+
+        :param binary_image: The binary image of the network
+        :param segment: The segment dictionary containing segment information
+        :param vein_mask: The mask of the vein corresponding to the segment
+        :return: A dictionary containing width measurements
         """
         coords = segment['coords']
         distances = []
         epsilon = 1e-6  # To avoid division by zero
-        min_length = 3   # Minimum length of the perpendicular line
+        min_length = 3.0  # Minimum length of the perpendicular line
         coords_length = len(coords)
+        distance_map = ndimage.distance_transform_edt(vein_mask)
+
         for i in range(coords_length):
+            y, x = coords[i]
+            if distance_map[int(y), int(x)] == 0:
+                continue
+            # Handle special cases for dy, dx
             if coords_length == 1:
-                y, x = coords[i]
-                dy, dx = 0, 0
+                dy, dx = 0.0, 0.0
             elif i == 0:
-                y, x = coords[i]
-                dy = coords[i + 1][0] - y
-                dx = coords[i + 1][1] - x
+                dy = float(coords[i + 1][0] - y)
+                dx = float(coords[i + 1][1] - x)
             elif i == coords_length - 1:
-                y, x = coords[i]
-                dy = y - coords[i - 1][0]
-                dx = x - coords[i - 1][1]
+                dy = float(y - coords[i - 1][0])
+                dx = float(x - coords[i - 1][1])
             else:
-                y, x = coords[i]
-                dy = coords[i + 1][0] - coords[i - 1][0]
-                dx = coords[i + 1][1] - coords[i - 1][1]
+                dy = float(coords[i + 1][0] - coords[i - 1][0])
+                dx = float(coords[i + 1][1] - coords[i - 1][1])
             norm = np.hypot(dx, dy)
             if norm < epsilon:
                 continue
             perp_dx = -dy / norm
             perp_dy = dx / norm
-            if distance_map[y, x] == 0:
-                continue
-            length = max(distance_map[y, x] * 2, min_length)
-            r0 = y - perp_dy * length / 2
-            c0 = x - perp_dx * length / 2
-            r1 = y + perp_dy * length / 2
-            c1 = x + perp_dx * length / 2
+            length = max(distance_map[int(y), int(x)] * 2.0, min_length)
+            r0 = y - perp_dy * length / 2.0
+            c0 = x - perp_dx * length / 2.0
+            r1 = y + perp_dy * length / 2.0
+            c1 = x + perp_dx * length / 2.0
             # Ensure indices are within image bounds
             r0 = np.clip(r0, 0, binary_image.shape[0] - 1)
             c0 = np.clip(c0, 0, binary_image.shape[1] - 1)
@@ -200,25 +213,19 @@ class NetworkDetection:
             if line_length == 0:
                 continue
             line_coords = np.linspace(0, 1, line_length)
-            rr = ((1 - line_coords) * r0 + line_coords * r1).astype(int)
-            cc = ((1 - line_coords) * c0 + line_coords * c1).astype(int)
-            # Remove duplicates
-            unique_points = set(zip(rr, cc))
-            if unique_points:
-                rr, cc = zip(*unique_points)
-                rr = np.array(rr)
-                cc = np.array(cc)
-                # Avoid out-of-bounds indices after removing duplicates
-                valid_idx = (rr >= 0) & (rr < binary_image.shape[0]) & (cc >= 0) & (cc < binary_image.shape[1])
-                rr = rr[valid_idx]
-                cc = cc[valid_idx]
-                # Relax the pixel inclusion criterion
-                vein_pixels = binary_image[rr, cc]
-                vein_pixel_ratio = np.sum(vein_pixels) / len(vein_pixels)
-                if vein_pixel_ratio < 0.5:  # Require at least 50% vein pixels
-                    continue
-                width = len(rr)
-                distances.append(width)
+            rr = r0 + line_coords * (r1 - r0)
+            cc = c0 + line_coords * (c1 - c0)
+            # Check indices are within image bounds
+            valid_idx = (rr >= 0) & (rr < binary_image.shape[0]) & (cc >= 0) & (cc < binary_image.shape[1])
+            rr = rr[valid_idx]
+            cc = cc[valid_idx]
+            # Interpolate profile values
+            from scipy.ndimage import map_coordinates
+            profile = map_coordinates(binary_image.astype(float), [rr, cc], order=1, mode='constant', cval=0.0)
+            # Determine width from the interpolated profile
+            threshold = 0.5  #can be adjusted later.Not a real issue
+            width = np.sum(profile > threshold) * (length / line_length)  # Adjust based on actual length
+            distances.append(width)
         if distances:
             widths = {
                 'average_width': np.mean(distances),
@@ -230,10 +237,10 @@ class NetworkDetection:
             }
             return widths
         else:
-            # I use that as a formality precaution: if no measurements could be made, estimate width from the distance map
-            median_distance = np.median(distance_map[coords[:, 0], coords[:, 1]])
+            # Estimate width from the distance map if no measurements were made
+            median_distance = np.median(distance_map[coords[:, 0].astype(int), coords[:, 1].astype(int)])
             if median_distance > 0:
-                estimated_width = median_distance * 2
+                estimated_width = median_distance * 2.0
                 widths = {
                     'average_width': estimated_width,
                     'width_node_A': estimated_width,
@@ -258,8 +265,8 @@ class NetworkDetection:
 
         # Initialize DataFrames to store information about vertices and edges
         vertices_df = pd.DataFrame(columns=['label', 't_start', 't_end', 'y', 'x'])
-        edges_df = pd.DataFrame(columns=['label', 't_start', 't_end', 'start_y', 'start_x',
-                                         'end_y', 'end_x', 'length', 'average_width',
+        edges_df = pd.DataFrame(columns=['label', 't_start', 't_end', 'A_y', 'A_x',
+                                         'B_y', 'B_x', 'length', 'average_width',
                                          'width_node_A', 'width_node_B', 'middle_width',
                                          'minimum_width', 'maximum_width'])
 
@@ -288,7 +295,7 @@ class NetworkDetection:
             current_vertex_labels = self.labeled_nodes.copy()
             num_nodes = np.max(current_vertex_labels)
 
-            # If previous labels exist, assign labels based on overlap
+            # Assign labels based on overlap with previous labels
             if previous_vertex_labels is not None:
                 # Compute overlap between current labels and previous labels
                 overlap = previous_vertex_labels * (current_vertex_labels > 0)
@@ -347,7 +354,8 @@ class NetworkDetection:
             if num_edges > 0:
                 for i, segment in enumerate(self.segments, start=1):
                     coords = segment['coords']
-                    current_edge_labels[coords[:, 0], coords[:, 1]] = i
+                    coords_int = coords.astype(int)
+                    current_edge_labels[coords_int[:, 0], coords_int[:, 1]] = i
                 if previous_edge_labels is not None:
                     # Compute overlap between current edges and previous edges
                     overlap = previous_edge_labels * (current_edge_labels > 0)
@@ -391,13 +399,15 @@ class NetworkDetection:
                             end_pos = segment['end_pos']
                             coords = segment['coords']
 
-                            # Measure segment width
+                            # Create mask of the segment
                             segment_mask = np.zeros_like(binary_image, dtype=bool)
-                            segment_mask[coords[:, 0], coords[:, 1]] = True
+                            coords_int = coords.astype(int)
+                            segment_mask[coords_int[:, 0], coords_int[:, 1]] = True
                             # Increase the dilation size for vein_mask
                             vein_mask = morphology.binary_dilation(segment_mask, morphology.disk(7)) & binary_image
-                            distance_map = ndimage.distance_transform_edt(vein_mask)
-                            width_measure = self.get_segment_width(binary_image, segment, distance_map)
+
+                            # Measure segment width
+                            width_measure = self.get_segment_width(binary_image, segment, vein_mask)
 
                             # Compute segment length
                             length = np.sum(np.hypot(np.diff(coords[:, 0]), np.diff(coords[:, 1])))
@@ -406,10 +416,10 @@ class NetworkDetection:
                                 'label': label,
                                 't_start': int(edge_times.loc[edge_times['label'] == label, 't_start']),
                                 't_end': int(edge_times.loc[edge_times['label'] == label, 't_end']),
-                                'start_y': start_pos[0],
-                                'start_x': start_pos[1],
-                                'end_y': end_pos[0],
-                                'end_x': end_pos[1],
+                                'A_y': start_pos[0],
+                                'A_x': start_pos[1],
+                                'B_y': end_pos[0],
+                                'B_x': end_pos[1],
                                 'length': length,
                             }
                             if width_measure:
